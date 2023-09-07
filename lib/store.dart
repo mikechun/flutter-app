@@ -13,7 +13,7 @@ class SettingsData {
   SettingsData.fromJson(Map<String, dynamic> json)
     : username = json['username'] ?? '',
       password = json['password'] ?? '',
-      verified= json['verified'] ?? '';
+      verified= json['verified'] ?? false;
 
   Map<String,dynamic> toJSON() => {
     'username': username,
