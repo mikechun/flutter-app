@@ -1,40 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'store.dart';
-import 'settings.dart';
+import 'providers/settings_state.dart';
+import 'pages/settings/settings.dart';
+import 'pages/home/home.dart';
 
 void main() async {
-  runApp(const MyApp());
+  // Make flutter_inappwebview available during plugin initialization
+  WidgetsFlutterBinding.ensureInitialized();
+
+  runApp(const App());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class App extends StatelessWidget {
+  const App({super.key});
 
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      // Load async data as soon as possible https://lakshydeep-14.medium.com/double-d-triple-dots-in-flutter-dbe2a42dd464
+      // Load settings data as soon as possible https://lakshydeep-14.medium.com/double-d-triple-dots-in-flutter-dbe2a42dd464
       create: (context) => SettingsState()..load(),
       lazy: false,
       child: MaterialApp(
-        title: 'Namer App',
+        title: 'Tennis Reservation App',
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
         ),
-        home: MyHomePage(),
+        home: HomePage(),
       ),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
+class HomePage extends StatefulWidget {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _HomePageState extends State<HomePage> {
   var selectedIndex = 0;
 
   @override
@@ -42,7 +46,7 @@ class _MyHomePageState extends State<MyHomePage> {
     Widget page;
     switch (selectedIndex) {
       case 0:
-        page = Placeholder();
+        page = BrowserPage();
         break;
       case 1:
         page = SettingsPage();
@@ -53,7 +57,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-
         return Scaffold(
           body: Row(
             children: [
@@ -79,10 +82,12 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
               Expanded(
+                child: SafeArea(
                 child: Container(
                   color: Theme.of(context).colorScheme.primaryContainer,
                   child: page,
                 ),
+                )
               ),
             ],
           ),
