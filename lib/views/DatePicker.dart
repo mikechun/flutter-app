@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 class DatePicker extends StatefulWidget {
   final ValueChanged<DateTime> onChange;
   final DateTime date;
+  final ButtonStyle? buttonStyle;
 
-  DatePicker({ required this.date, required this.onChange });
+  DatePicker({ required this.date, required this.onChange, this.buttonStyle });
 
   @override
   State<DatePicker> createState() => _DatePickerState();
@@ -68,14 +69,16 @@ class _DatePickerState extends State<DatePicker> {
             Center(
               child: 
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     TextButton.icon(
+                      style: widget.buttonStyle,
                       label: Text('${selectedDate.year}/${selectedDate.month}/${selectedDate.day}'),
                       icon: Icon(Icons.calendar_today),
                       onPressed: () { _selectDate(context); },
                     ),
                     TextButton.icon(
+                      style: widget.buttonStyle,
                       label: Text('${selectedDate.hour.toString().padLeft(2, '0')}:${selectedDate.minute.toString().padLeft(2, '0')}'),
                       icon: Icon(Icons.access_time),
                       onPressed: () { _selectTime(context); },

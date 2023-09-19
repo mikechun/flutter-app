@@ -1,6 +1,5 @@
-import 'dart:html';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 String runJsAnonFunction(List<String> scripts) {
@@ -19,11 +18,12 @@ String getElementsJsScript(selector, innerText) {
     }
 
     if (!els || !els.length) {
-      return '_NoElementFoundException()';
+      throw new Error("NoElementFound");
     }
   """;
 }
 
+class NoElementFoundException implements Exception {}
 
 class WebViewAutomator {
   final WebViewController controller; 
@@ -38,11 +38,32 @@ class WebViewAutomator {
     return await controller.currentUrl() ?? '';
   }
 
-  Future<bool> type({required String selector, String innerText = '', required String value}) async {
+  Future<String> runJavaScriptOnElements({required String selector, String innerText = '', required String js}) async {
+    // Exit early on element not found errors;
+    try {
+      final r = await controller.runJavaScript(
+        runJsAnonFunction([
+          getElementsJsScript(selector, innerText),
+        ])
+      );
+    } on PlatformException catch (e) {
+      throw NoElementFoundException();
+    }
+
     final r = await controller.runJavaScriptReturningResult(
       runJsAnonFunction([
         getElementsJsScript(selector, innerText),
-        """
+        js,
+        'return ""',
+      ])
+    );
+    return r.toString();
+  }
+
+  Future<bool> type({required String selector, String innerText = '', required String value}) async {
+    String result = await runJavaScriptOnElements(
+      selector: selector, 
+      js: """
         for (var c of "$value") {
           var key = {"key": c};
           for (el of els) {
@@ -52,106 +73,92 @@ class WebViewAutomator {
             el.value += c;
           }
         }
-        return 'true';
-        """
-      ])
+      """
     );
-    return r == 'true';
+    return true;
   }
   
   Future<bool> set({required String selector, String innerText = '', required String value}) async {
-    final r = await controller.runJavaScriptReturningResult(
-      runJsAnonFunction([
-        getElementsJsScript(selector, innerText),
-        // JS Script to set value of items
-        """
+    String result = await runJavaScriptOnElements(
+      selector: selector, 
+      js: """
         for (el of els) {
           el.value = "$value";
         }
         return 'true';
         """
-      ])
     );
-    return r == 'true';
+    return result == 'true';
   }
 
   Future<String> getHTML({required String selector}) async {
     debugPrint('gettingHTML: $selector');
-    final r = await controller.runJavaScriptReturningResult(
-      runJsAnonFunction([
-        getElementsJsScript(selector, ''),
+    String result = await runJavaScriptOnElements(
+      selector: selector, 
+      js: """
         // JS Script to get HTML. Returns first item only
-        """
         return els[0].outerHTML;
         """
-      ])
     );
-    return r.toString();
+    return result.toString();
   }
 
 
 
   Future<num> find({required String selector, String innerText = ''}) async {
-    final r = await controller.runJavaScriptReturningResult(
-      runJsAnonFunction([
-        getElementsJsScript(selector, innerText),
-        """
+    String result = await runJavaScriptOnElements(
+      selector: selector, 
+      js: """
         return els.length;
         """
-      ])
     );
-    if (r == 'false') {
-      return 0;
-    }
-    return r as num;
+    return num.parse(result);
   }
 
   Future<bool> click({required String selector, String innerText = ''}) async {
-    final r = await controller.runJavaScriptReturningResult(
-      runJsAnonFunction([
-        getElementsJsScript(selector, innerText),
-        """
+    String result = await runJavaScriptOnElements(
+      selector: selector, 
+      js: """
         els.forEach(el => el.click());
         return true;
         """
-      ])
     );
-    return r == 'true';
+    return result == 'true';
   }
 
   Future<bool> check({required String selector, String innerText = ''}) async {
-    final r = await controller.runJavaScriptReturningResult(
-      runJsAnonFunction([
-        getElementsJsScript(selector, innerText),
-        """
+    String result = await runJavaScriptOnElements(
+      selector: selector, 
+      js: """
         els.forEach(el => el.checked = true);
         return true;
         """
-      ])
     );
-    return r == 'true';
+    return result == 'true';
   }
 
   Future<bool> waitElement({required String selector, String innerText = ''}) async {
     final startTime = DateTime.now().millisecondsSinceEpoch;
     while (true) {
-      final r = await controller.runJavaScriptReturningResult(
-        runJsAnonFunction([
-          getElementsJsScript(selector, innerText),
-          """
-          return 'true';
-          """,
-        ])
-      );
-      if (r == 'true') {
-        return true;
-      }
-      // Fail after waiting 15 seconds
-      if (DateTime.now().millisecondsSinceEpoch - startTime > 15000) {
-        return false;
-      }
+      try {
+        String result = await runJavaScriptOnElements(
+          selector: selector, 
+          js: """
+            return 'true';
+            """,
+        );
+        if (result == 'true') {
+          return true;
+        }
+      } on NoElementFoundException {
+        // Fail after waiting 15 seconds
+        if (DateTime.now().millisecondsSinceEpoch - startTime > 15000) {
+          debugPrint('rethrowing exception');
+          rethrow;
+        }
 
-      await Future.delayed(Duration(milliseconds: 25));
+        await Future.delayed(Duration(milliseconds: 25));
+      }
     }
   }
 
@@ -160,24 +167,24 @@ class WebViewAutomator {
     final startTime = DateTime.now().millisecondsSinceEpoch;
 
     while (true) {
-      final r = await controller.runJavaScriptReturningResult(
+      final result = await controller.runJavaScriptReturningResult(
         """
         document.readyState;
         """
       );
-      if (r != 'complete') {
+      if (result != 'complete') {
         break;
       }
       await Future.delayed(Duration(milliseconds: 25));
     }
 
     while (true) {
-      final r = await controller.runJavaScriptReturningResult(
+      final result = await controller.runJavaScriptReturningResult(
         """
         document.readyState;
         """
       );
-      if (r == 'complete') {
+      if (result == 'complete') {
         debugPrint('success');
         return true;
       }
@@ -187,7 +194,7 @@ class WebViewAutomator {
         debugPrint('failed');
         return false;
       }
-      debugPrint(r as String);
+      debugPrint(result as String);
 
       await Future.delayed(Duration(milliseconds: 25));
     }
