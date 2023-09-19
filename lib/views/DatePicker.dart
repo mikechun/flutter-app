@@ -1,14 +1,23 @@
 import 'package:flutter/material.dart';
 
 class DatePicker extends StatefulWidget {
+  final ValueChanged<DateTime> onChange;
+  final DateTime date;
+
+  DatePicker({ required this.date, required this.onChange });
 
   @override
   State<DatePicker> createState() => _DatePickerState();
 }
 
 class _DatePickerState extends State<DatePicker> {
-  TimeOfDay selectedTime = TimeOfDay.now();
-  DateTime selectedDate = DateTime.now();
+  late DateTime selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedDate = widget.date;
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     DateTime? date = await showDatePicker(
@@ -20,8 +29,10 @@ class _DatePickerState extends State<DatePicker> {
 
     if (date != null && date != selectedDate) {
       setState(() {
-        selectedDate = date;
+        selectedDate = selectedDate.copyWith(year: date.year, month: date.month, day: date.day);
       });
+
+      widget.onChange(selectedDate);
     }
   }
 
@@ -29,13 +40,23 @@ class _DatePickerState extends State<DatePicker> {
     TimeOfDay? time = await showTimePicker(
       context: context,
       initialEntryMode: TimePickerEntryMode.inputOnly,
-      initialTime: selectedTime,
+      initialTime: TimeOfDay.fromDateTime(selectedDate),
     );
 
-    if (time != null && time != selectedTime) {
+    if (time != null) {
+      int minute = (time.minute / 30).round() * 30;
+      int hour = time.hour;
+
+      if (minute >= 60) {
+        hour += (minute / 60).floor();
+        minute = minute % 60;
+      }
+
       setState(() {
-        selectedTime = time;
+        selectedDate = selectedDate.copyWith(hour: hour, minute: minute);
       });
+
+      widget.onChange(selectedDate);
     }
   }
 
@@ -47,6 +68,7 @@ class _DatePickerState extends State<DatePicker> {
             Center(
               child: 
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     TextButton.icon(
                       label: Text('${selectedDate.year}/${selectedDate.month}/${selectedDate.day}'),
@@ -54,7 +76,7 @@ class _DatePickerState extends State<DatePicker> {
                       onPressed: () { _selectDate(context); },
                     ),
                     TextButton.icon(
-                      label: Text('${selectedTime.hour}:${selectedTime.minute}'),
+                      label: Text('${selectedDate.hour.toString().padLeft(2, '0')}:${selectedDate.minute.toString().padLeft(2, '0')}'),
                       icon: Icon(Icons.access_time),
                       onPressed: () { _selectTime(context); },
                     ),

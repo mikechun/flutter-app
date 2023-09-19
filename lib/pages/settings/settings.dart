@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:tennibot/controllers/automator.dart';
 import '../../providers/settings_state.dart';
 
 class SettingsPage extends StatefulWidget {

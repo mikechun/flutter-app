@@ -1,9 +1,9 @@
-import "dart:collection";
-import 'dart:ffi';
+import 'dart:html';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-String wrapJsScript(List<String> scripts) {
+String runJsAnonFunction(List<String> scripts) {
   return [
     "(() => {",
     ...scripts,
@@ -13,16 +13,17 @@ String wrapJsScript(List<String> scripts) {
 
 String getElementsJsScript(selector, innerText) {
   return """
-    var els = Array.from(document.querySelectorAll("${selector}"));
-    if ("${innerText}" && els) {
-      els = els.filter(el => el.innerText == "${innerText}");
+    var els = Array.from(document.querySelectorAll("$selector"));
+    if ("$innerText" && els) {
+      els = els.filter(el => el.innerText == "$innerText");
     }
 
     if (!els || !els.length) {
-      return 'false';
+      return '_NoElementFoundException()';
     }
   """;
 }
+
 
 class WebViewAutomator {
   final WebViewController controller; 
@@ -31,15 +32,18 @@ class WebViewAutomator {
 
   Future<void> open({required String url}) async {
     await controller.loadRequest(Uri.parse(url));
-    await waitPageload();
+  }
+
+  Future<String> getLocation() async {
+    return await controller.currentUrl() ?? '';
   }
 
   Future<bool> type({required String selector, String innerText = '', required String value}) async {
     final r = await controller.runJavaScriptReturningResult(
-      wrapJsScript([
+      runJsAnonFunction([
         getElementsJsScript(selector, innerText),
         """
-        for (var c of "${value}") {
+        for (var c of "$value") {
           var key = {"key": c};
           for (el of els) {
             el.dispatchEvent(new KeyboardEvent('keydown', key));
@@ -57,12 +61,12 @@ class WebViewAutomator {
   
   Future<bool> set({required String selector, String innerText = '', required String value}) async {
     final r = await controller.runJavaScriptReturningResult(
-      wrapJsScript([
+      runJsAnonFunction([
         getElementsJsScript(selector, innerText),
         // JS Script to set value of items
         """
         for (el of els) {
-          el.value = "${value}";
+          el.value = "$value";
         }
         return 'true';
         """
@@ -72,12 +76,13 @@ class WebViewAutomator {
   }
 
   Future<String> getHTML({required String selector}) async {
+    debugPrint('gettingHTML: $selector');
     final r = await controller.runJavaScriptReturningResult(
-      wrapJsScript([
+      runJsAnonFunction([
         getElementsJsScript(selector, ''),
         // JS Script to get HTML. Returns first item only
         """
-        return el[0].outerHTML;
+        return els[0].outerHTML;
         """
       ])
     );
@@ -86,9 +91,9 @@ class WebViewAutomator {
 
 
 
-  Future<int> find({required String selector, String innerText = ''}) async {
+  Future<num> find({required String selector, String innerText = ''}) async {
     final r = await controller.runJavaScriptReturningResult(
-      wrapJsScript([
+      runJsAnonFunction([
         getElementsJsScript(selector, innerText),
         """
         return els.length;
@@ -98,12 +103,12 @@ class WebViewAutomator {
     if (r == 'false') {
       return 0;
     }
-    return r as int;
+    return r as num;
   }
 
   Future<bool> click({required String selector, String innerText = ''}) async {
     final r = await controller.runJavaScriptReturningResult(
-      wrapJsScript([
+      runJsAnonFunction([
         getElementsJsScript(selector, innerText),
         """
         els.forEach(el => el.click());
@@ -116,7 +121,7 @@ class WebViewAutomator {
 
   Future<bool> check({required String selector, String innerText = ''}) async {
     final r = await controller.runJavaScriptReturningResult(
-      wrapJsScript([
+      runJsAnonFunction([
         getElementsJsScript(selector, innerText),
         """
         els.forEach(el => el.checked = true);
@@ -131,7 +136,7 @@ class WebViewAutomator {
     final startTime = DateTime.now().millisecondsSinceEpoch;
     while (true) {
       final r = await controller.runJavaScriptReturningResult(
-        wrapJsScript([
+        runJsAnonFunction([
           getElementsJsScript(selector, innerText),
           """
           return 'true';
