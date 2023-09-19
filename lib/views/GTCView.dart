@@ -48,6 +48,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
   DateTime date = DateTime.now().copyWith(hour: 19, minute: 30, second: 0);
   String courtNumber = '1';
   String duration = '90';
+  bool running = false;
 
   @override
   void initState() {
@@ -213,6 +214,34 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     return true;
   }
 
+  Future<bool> run(DateTime date, int duration, int courtNumber) async {
+    try {
+      await login();
+      await navigateBookingPage();
+
+      while (true) {
+        try {
+          await findCourt(date: date, duration: duration, courtNum: courtNumber);
+        } on TimeoutException {
+          debugPrint('Failed. Could not find availability');
+          return false;
+        }
+
+        try {
+          await reserve(date);
+        } on TimeslotUnavailableException {
+          continue;
+        }
+        break;
+      }
+      return true;
+    } on NoElementFoundException {
+      debugPrint('Failed. Website may have changed');
+      await _automator.open(url: 'https://gtc.clubautomation.com');
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const double buttonWidth = 150;
@@ -268,42 +297,41 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
               ),
             ],
           ),
+             Stack(
+              children: [
           ElevatedButton(
-            onPressed: () async {
+            style: ElevatedButton.styleFrom(
+              fixedSize: Size.fromWidth(150),
+            ),
+            onPressed: 
+              running ? null : 
+            () async {
+              setState(() {
+                running = true;
+              });
               await run(date, int.parse(duration), int.parse(courtNumber));
+              setState(() {
+                running = false;
+              });
             },
-            child: Text('Reserve')
+            child: const Text('Reserve'),
           ),
+                Positioned(
+                  right: 12,
+                  top: 14,
+                  child: 
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: 
+                        running ? CircularProgressIndicator(
+                          strokeWidth: 3,
+                        ) : null,
+                  ),
+            ),
+          ]),
         ],
       )
     );
-  }
-
-  Future<bool> run(DateTime date, int duration, int courtNumber) async {
-    try {
-      await login();
-      await navigateBookingPage();
-
-      while (true) {
-        try {
-          await findCourt(date: date, duration: duration, courtNum: courtNumber);
-        } on TimeoutException {
-          debugPrint('Failed. Could not find availability');
-          return false;
-        }
-
-        try {
-          await reserve(date);
-        } on TimeslotUnavailableException {
-          continue;
-        }
-        break;
-      }
-      return true;
-    } on NoElementFoundException {
-      debugPrint('Failed. Website may have changed');
-      await _automator.open(url: 'https://gtc.clubautomation.com');
-      return false;
-    }
   }
 }
