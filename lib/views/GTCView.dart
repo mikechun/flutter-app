@@ -32,6 +32,7 @@ Map<String, String> parseCourtValues(String html) {
 
 class TimeslotUnavailableException implements Exception {}
 class CourtNotAvailableException implements Exception {}
+class AuthenticationException implements Exception {}
 
 class GTCViewComponent extends StatefulWidget {
   final String initialUrl = 'https://gtc.clubautomation.com/';
@@ -57,20 +58,18 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     super.initState();
 
     _automator = WebViewAutomator();
-    // _automator.open(url: 'https://gtc.clubautomation.com');
-    // await _automator.waitPageload();
-    debugPrint('initialized automator');
   }
 
   login() async {
-    debugPrint('logging in');
-    debugPrint(username);
-    debugPrint(password);
+    if (username.isEmpty || password.isEmpty) {
+      return;
+    }
 
+    debugPrint('logging in');
     await _automator.open(url: 'https://gtc.clubautomation.com');
     await _automator.waitPageload();
 
-    final String url = await _automator.getLocation();
+    String url = await _automator.getLocation();
     if (url == 'https://gtc.clubautomation.com/member') {
       debugPrint('already logged in');
       return;
@@ -83,6 +82,12 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
 
     await _automator.click(selector: '#loginButton');
     await _automator.waitPageload();
+
+    url = await _automator.getLocation();
+    if (url != 'https://gtc.clubautomation.com/member') {
+      throw AuthenticationException();
+    }
+
     debugPrint('logging in success');
   }
 
@@ -188,27 +193,11 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
   Future<void> ajaxReserve() async {
     // String tokenHTML = await _automator.getHTML(selector: '#event_member_token_reserve_court');
     // String eventMemberToken = RegExp(r'.*value="(\S+)".+').firstMatch(tokenHTML)?.group(1) ?? '';
-
     await login();
     await navigateBookingPage();
-
-
-        // (() => {
-        //   fetch('/').then(async (res) => {
-        //     ___.postMessage(1);
-        //     ___.postMessage('s');
-        //     ___.postMessage('1');
-        //     ___.postMessage([1,2,3]);
-        //     ___.postMessage(true);
-        //   })
-        // })();
-
-
   }
 
   Future<bool> run(DateTime date, int duration, int courtNumber, DateTime? scheduledRun) async {
-      var targetTime = formatCourtTime(date);
-
       await login();
       await navigateBookingPage();
 
@@ -221,6 +210,8 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
         while (swatch.elapsed < Duration(seconds: 1)) {
           try {
             List<String> courts = await findCourt(date: date, duration: duration, courtNum: courtNumber, refreshDelayMSec: 10);
+            final targetTime = formatCourtTime(date);
+
             if (!courts.contains(targetTime)) {
               // Given time is not available.  Pick a different time and try again
               return false;

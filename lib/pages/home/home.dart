@@ -12,11 +12,6 @@ class _BrowserPageState extends State<BrowserPage> {
   @override
   void initState() {
     super.initState();
-
-    Future.delayed(Duration(milliseconds: 1000), () async {
-      setState(() {
-      });
-    });
   }
   
   @override
