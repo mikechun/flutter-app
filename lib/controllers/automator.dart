@@ -233,40 +233,6 @@ class WebViewAutomator {
 
   Future<void> waitElement({required String listenerSelector, required String targetSelector, String innerText = ''}) async {
     debugPrint('wait element');
-    /*
-    var completer = promises[WebViewEvents.waitElement];
-    if (completer != null && !completer.isCompleted) {
-      completer.completeError(WaitElementAbortedException());
-    }
-
-    var newCompleter = Completer();
-    promises[WebViewEvents.waitElement] = newCompleter;
-    Future.delayed(Duration(milliseconds: 10000), () {
-      if (!newCompleter.isCompleted) {
-        newCompleter.completeError(TimeoutException('Mutation not detected on element $listenerSelector'));
-      }
-    });
-
-    // Register element observer
-    await runJavaScriptOnElements(
-      selector: listenerSelector, 
-      js: """
-        var observer = new MutationObserver(() => {
-          ___.postMessage('${WebViewEvents.waitElement}');
-          observer.disconnect();
-        });
-
-        observer.observe(els[0], { attributes: true, childList: true, subtree: true });
-        return true;
-        """
-    );
-    await newCompleter.future;
-    await runJavaScriptOnElements(
-      selector: targetSelector, 
-      innerText: innerText,
-      js: "return true;",
-    );
-    */
 
     var swatch = Stopwatch()..start();
     while (swatch.elapsed < Duration(seconds: 10)) {
