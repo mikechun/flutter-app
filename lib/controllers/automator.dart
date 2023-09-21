@@ -200,6 +200,14 @@ class WebViewAutomator {
     return result.toString();
   }
 
+  Future<String?> getHTMLorNULL({required String selector}) async {
+    try {
+      return await getHTML(selector: selector);
+    } on NoElementFoundException {
+      return null;
+    }
+  }
+
   Future<bool> click({required String selector, String innerText = ''}) async {
     String result = await runJavaScriptOnElements(
       selector: selector, 
@@ -275,8 +283,8 @@ class WebViewAutomator {
         debugPrint('not found element trying again');
       }
     }
-    debugPrint('not found element failing');
-    throw TimeoutException('Element $targetSelector could not be found');
+    debugPrint('Timed out founding the element');
+    throw NoElementFoundException();
   }
 
 

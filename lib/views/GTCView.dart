@@ -30,8 +30,8 @@ Map<String, String> parseCourtValues(String html) {
 }
 
 
-class TimeslotUnavailableException implements Exception {
-}
+class TimeslotUnavailableException implements Exception {}
+class CourtNotAvailableException implements Exception {}
 
 class GTCViewComponent extends StatefulWidget {
   final String initialUrl = 'https://gtc.clubautomation.com/';
@@ -91,7 +91,8 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     await _automator.waitPageload();
   }
 
-  Future<bool> findCourt({required DateTime date, required int duration, int? courtNum, int timeoutSec = 5, int refreshDelayMSec = 100}) async {
+  Future<List<String>> findCourt({required DateTime date, required int duration, int courtNum = -1, int timeoutSec = 5, int refreshDelayMSec = 100}) async {
+    String courtId = '-1';
     var formattedDate = '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
 
     // tennis location is '1'
@@ -100,31 +101,41 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     await _automator.set(selector: '#date', value: formattedDate);
     // set duration
     await _automator.check(selector: '#interval-$duration');
+    //
+    await _automator.set(selector: '#timeFrom', value: '0');
+    await _automator.set(selector: '#timeTo', value: '24');
 
     final selectHTML = await _automator.getHTML(selector: '#court');
     final courtValues = parseCourtValues(selectHTML);
-    // If the court number was not provided or not found, search all using -1 value
-    String courtValue = '-1';
-    if (courtNum is int && courtValues.containsKey(courtNum.toString())) {
-      courtValue = courtValues[courtNum.toString()] as String;
-    } else if (courtNum != -1) {
-      throw Exception();
-    }
 
-    await _automator.set(selector: '#court', value: courtValue);
+    if (courtValues.containsKey(courtNum.toString())) {
+      courtId = courtValues[courtNum.toString()] as String;
+    } 
+
+    await _automator.set(selector: '#court', value: courtId);
+    debugPrint('configured courts search');
 
     await _automator.click(selector: '#reserve-court-search');
+    debugPrint('clicked courts search');
     await _automator.waitElement(
       listenerSelector: '#reserve-court-new',
       targetSelector: '#times-to-reserve > tbody > tr > td > a, .court-not-available-text'
     );
+    debugPrint('courts results received');
 
-    String availabilityHTML = await _automator.getHTML(selector: '#times-to-reserve > tbody > tr');
-    String courtTime = formatCourtTime(date);
-    if (!availabilityHTML.contains(courtTime)) {
-      return false;
+    String? availabilityHTML = await _automator.getHTMLorNULL(selector: '#times-to-reserve > tbody > tr');
+    if (availabilityHTML == null) {
+      throw CourtNotAvailableException();
     }
-    return true;
+
+    debugPrint('parsing court times');
+    List<String> courtTimes = [];
+
+    var matches = RegExp(r'\d?\d:\d\d ?(am|pm)').allMatches(availabilityHTML);
+    for (final m in matches) {
+      courtTimes.add(m[0] as String);
+    }
+    return courtTimes;
   }
 
   Future<bool> reserve(DateTime date) async {
@@ -195,48 +206,50 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
 
   }
 
-  Future<bool> run(DateTime date, int duration, int courtNumber) async {
-    try {
+  Future<bool> run(DateTime date, int duration, int courtNumber, DateTime? scheduledRun) async {
+      var targetTime = formatCourtTime(date);
+
       await login();
       await navigateBookingPage();
 
-      
-      DateTime now = DateTime.now();
-      DateTime releaseTime = DateTime.now().copyWith(hour: 12, minute: 30, second: 0, millisecond: 0, microsecond: 0);
-      if (releaseTime.subtract(Duration(minutes: 5)).isBefore(now) && releaseTime.isAfter(now)) {
-        await Future.delayed(releaseTime.subtract(Duration(seconds: 2)).difference(now));
+      if (scheduledRun != null) {
+        await waitUntil(scheduledRun);
       }
 
-      for (int i = 0; i < 3; i++) {
-        try {
-          var swatch = Stopwatch()..start();
-          while (swatch.elapsed < Duration(seconds: 5)) {
-            if(await findCourt(date: date, duration: duration, courtNum: courtNumber, refreshDelayMSec: 100)){
-              // break findCourt retry
-              break;
+      try {
+        var swatch = Stopwatch()..start();
+        while (swatch.elapsed < Duration(seconds: 1)) {
+          try {
+            List<String> courts = await findCourt(date: date, duration: duration, courtNum: courtNumber, refreshDelayMSec: 10);
+            if (!courts.contains(targetTime)) {
+              // Given time is not available.  Pick a different time and try again
+              return false;
             }
-            await Future.delayed(Duration(milliseconds: 10));
-          }
             await reserve(date);
-            //break reserve retry
-            break;
-        } on TimeslotUnavailableException {
-          // If the first try fails, try to get any court
-          if (courtNumber > 0) {
-            courtNumber = -1;
-          }
-          continue;
-        } 
+            return true;
+          } on CourtNotAvailableException {
+            // try again. this is likely because the website has not refreshed yet.
+            await Future.delayed(Duration(milliseconds: 1000));
+            continue;
+          } on TimeslotUnavailableException {
+            // If failed to get the court that we wanted, try to get any court
+            if (courtNumber > 0) {
+              courtNumber = -1;
+            }
+            continue;
+          } 
+        }
+      } on NoElementFoundException catch (e, s) {
+        debugPrint('Failed. Element not found during the run. Website may have changed');
+        debugPrintStack(stackTrace: s);
+        return false;
+      } on TimeoutException catch (e, s) {
+        // Failed to find elements in time. Likely due to server not updating UI as expected
+        debugPrint('Failed. Website failed to update during the run. Website may have changed');
+        debugPrintStack(stackTrace: s);
+        return false;
       }
       return true;
-    } on NoElementFoundException {
-      debugPrint('Failed. Website may have changed');
-      return false;
-    } on TimeoutException {
-      // Failed to find elements in time. Likely due to server not updating UI as expected
-      debugPrint('Failed Server timed out');
-      return false;
-    }
   }
 
   @override
@@ -310,7 +323,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
               setState(() {
                 running = true;
               });
-              await run(date, int.parse(duration), int.parse(courtNumber));
+              await run(date, int.parse(duration), int.parse(courtNumber), null);
               setState(() {
                 running = false;
               });
@@ -336,3 +349,8 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     );
   }
 }
+
+  Future<void> waitUntil(DateTime scheduledRun) async {
+    DateTime now = DateTime.now();
+    await Future.delayed(scheduledRun.difference(now));
+  }
