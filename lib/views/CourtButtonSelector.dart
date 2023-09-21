@@ -5,7 +5,7 @@ class CourtButtonSelector extends StatelessWidget{
   final ButtonStyle buttonStyle;
   final double menuWidth;
   final double menuHeight;
-  final List<String> menuItems = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '13', '16', '17', '18'];
+  final List<String> menuItems = ['-1', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '13', '16', '17', '18'];
   final ValueChanged<String> onSelect;
   final String text;
 
@@ -26,7 +26,7 @@ class CourtButtonSelector extends StatelessWidget{
       text: text,
       icon: const Icon(Icons.format_list_numbered),
       menuItems: menuItems,
-      menuItemTextRender: (value) => 'Court $value',
+      menuItemTextRender: (value) => value == '-1' ? 'Any Courts' : 'Court $value',
       onSelect: onSelect);
   }
 }

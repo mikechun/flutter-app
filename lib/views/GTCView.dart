@@ -1,15 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:tennibot/controllers/automator.dart';
+import 'package:tennibot/providers/settings_state.dart';
 import 'package:tennibot/views/CourtButtonSelector.dart';
 import 'package:tennibot/views/DatePicker.dart';
 import 'package:tennibot/views/DurationButtonSelector.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';        // Import for Android features.
-import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';    // Import for iOS features.
 
-Map<String, String> parseCourtSelector(String html) {
+Map<String, String> parseCourtValues(String html) {
   List courtOptions = html
     .split('\n')
     .where((s) => s.contains('>Tennis - Court'))
@@ -43,90 +43,30 @@ class GTCViewComponent extends StatefulWidget {
 }
 
 class _GTCViewComponentState extends State<GTCViewComponent> {
-  late final WebViewController _controller;
   late final WebViewAutomator _automator;
-  DateTime date = DateTime.now().copyWith(hour: 19, minute: 30, second: 0);
+  DateTime date = DateTime.now().copyWith(hour: 19, minute: 30, second: 0).add(const Duration(days: 8));
   String courtNumber = '1';
   String duration = '90';
   bool running = false;
+  late String username;
+  late String password;
 
   @override
   void initState() {
     debugPrint('initializing GTCView state');
     super.initState();
 
-    // #docregion platform_features
-    late final PlatformWebViewControllerCreationParams params;
-    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
-      params = WebKitWebViewControllerCreationParams(
-        allowsInlineMediaPlayback: false,
-        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
-      );
-    } else {
-      params = const PlatformWebViewControllerCreationParams();
-    }
-
-    final WebViewController controller =
-        WebViewController.fromPlatformCreationParams(params);
-    // #enddocregion platform_features
-
-    controller
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            debugPrint('WebView is loading (progress : $progress%)');
-          },
-          onPageStarted: (String url) {
-            debugPrint('Page started loading: $url');
-          },
-          onPageFinished: (String url) {
-            debugPrint('Page finished loading: $url');
-          },
-          onWebResourceError: (WebResourceError error) {
-            debugPrint('''
-              Page resource error:
-                code: ${error.errorCode}
-                description: ${error.description}
-                errorType: ${error.errorType}
-                isForMainFrame: ${error.isForMainFrame}
-            ''');
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            debugPrint('allowing navigation to ${request.url}');
-            return NavigationDecision.navigate;
-          },
-          onUrlChange: (UrlChange change) {
-            debugPrint('url change to ${change.url}');
-          },
-        ),
-      )
-      ..addJavaScriptChannel(
-        'Toaster',
-        onMessageReceived: (JavaScriptMessage message) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(message.message)),
-          );
-        },
-      )
-      ..loadRequest(Uri.parse('https://gtc.clubautomation.com'));
-
-    // #docregion platform_features
-    if (controller.platform is AndroidWebViewController) {
-      AndroidWebViewController.enableDebugging(true);
-      (controller.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false);
-    }
-    // #enddocregion platform_features
-
-    _controller = controller;
-    _automator = WebViewAutomator(controller);
+    _automator = WebViewAutomator();
+    // _automator.open(url: 'https://gtc.clubautomation.com');
+    // await _automator.waitPageload();
     debugPrint('initialized automator');
   }
 
   login() async {
     debugPrint('logging in');
+    debugPrint(username);
+    debugPrint(password);
+
     await _automator.open(url: 'https://gtc.clubautomation.com');
     await _automator.waitPageload();
 
@@ -137,8 +77,8 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     }
 
     debugPrint('typing');
-    await _automator.type(selector: '#login', value: 'mikechun');
-    await _automator.type(selector: '#password', value: 'Tennis4all');
+    await _automator.type(selector: '#login', value: username);
+    await _automator.type(selector: '#password', value: password);
     debugPrint('clicking');
 
     await _automator.click(selector: '#loginButton');
@@ -151,7 +91,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     await _automator.waitPageload();
   }
 
-  findCourt({required DateTime date, required int duration, int? courtNum, int timeoutSec = 30, int refreshDelayMSec = 1000}) async {
+  Future<bool> findCourt({required DateTime date, required int duration, int? courtNum, int timeoutSec = 5, int refreshDelayMSec = 100}) async {
     var formattedDate = '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
 
     // tennis location is '1'
@@ -162,56 +102,97 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     await _automator.check(selector: '#interval-$duration');
 
     final selectHTML = await _automator.getHTML(selector: '#court');
-    final courts = parseCourtSelector(selectHTML);
+    final courtValues = parseCourtValues(selectHTML);
     // If the court number was not provided or not found, search all using -1 value
     String courtValue = '-1';
-    if (courtNum is int && courts.containsKey(courtNum.toString())) {
-      courtValue = courts[courtNum.toString()] as String;
-    } else {
+    if (courtNum is int && courtValues.containsKey(courtNum.toString())) {
+      courtValue = courtValues[courtNum.toString()] as String;
+    } else if (courtNum != -1) {
       throw Exception();
     }
 
     await _automator.set(selector: '#court', value: courtValue);
 
-    final Stopwatch watch = Stopwatch()..start();
-    int count = 0;
-    while (watch.elapsedMilliseconds < timeoutSec * 1000) {
-      debugPrint('finding court... $count');
-      count += 1;
-      await _automator.click(selector: '#reserve-court-search');
-      await _automator.waitElement(selector: '#times-to-reserve > tbody > tr > td:last-child > a, .court-not-available-text');
+    await _automator.click(selector: '#reserve-court-search');
+    await _automator.waitElement(
+      listenerSelector: '#reserve-court-new',
+      targetSelector: '#times-to-reserve > tbody > tr > td > a, .court-not-available-text'
+    );
 
-      try {
-        await _automator.getHTML(selector: '#times-to-reserve > tbody > tr > td:last-child > a');
-        return true;
-      } on NoElementFoundException {
-        await Future.delayed(Duration(milliseconds: refreshDelayMSec));
-      }
+    String availabilityHTML = await _automator.getHTML(selector: '#times-to-reserve > tbody > tr');
+    String courtTime = formatCourtTime(date);
+    if (!availabilityHTML.contains(courtTime)) {
+      return false;
     }
-    throw TimeoutException('Could not find a court');
+    return true;
   }
 
   Future<bool> reserve(DateTime date) async {
+    String time = formatCourtTime(date);
+
+    await _automator.click(selector: '#times-to-reserve > tbody > tr > td > a', innerText: time);
+    await _automator.waitElement(
+      listenerSelector: '#reserve-court-new',
+      targetSelector: '.confirm-reservation-dialog',
+    );
+
+    try {
+      await _automator.click(selector: '#confirm');
+    } on NoElementFoundException {
+      // If confirm button cannot be found, close button should be present
+      String buttonHTML = await _automator.getHTML(selector: '#button-ok');
+      if (buttonHTML.contains('Close</button>')) {
+        debugPrint('Failed to book');
+        await _automator.click(selector: '#button-ok');
+        throw TimeslotUnavailableException();
+      }
+      // If close button is not found, then document structure must have changed
+      rethrow;
+    }
+
+    await _automator.waitElement(
+      listenerSelector: '#reserve-court-popup-new',
+      targetSelector: '#button-ok',
+    );
+    String buttonHTML = await _automator.getHTML(selector: '#button-ok');
+    if (buttonHTML.contains('Close</button>')) {
+      debugPrint('Failed to book');
+      await _automator.click(selector: '#button-ok');
+      throw TimeslotUnavailableException();
+    } else {
+      debugPrint('Success in booking');
+      await _automator.click(selector: '#button-ok');
+      return true;
+    }
+  }
+
+  String formatCourtTime(DateTime date) {
     final String ampm = date.hour < 12 ? 'am' : 'pm';
     final String hour = date.hour < 13 ? '${date.hour}' : '${date.hour % 12}';
     final String minute = date.minute.toString().padLeft(2, '0');
     final String time = '$hour:$minute$ampm';
+    return time;
+  }
 
-    await _automator.click(selector: '#times-to-reserve > tbody > tr > td:last-child > a', innerText: time);
-    await _automator.waitElement(selector: '.confirm-reservation-dialog');
-    var confirmButtons = await _automator.find(selector: '#confirm');
-    if (confirmButtons == 0) {
-      throw TimeslotUnavailableException();
-    }
-    await _automator.click(selector: '#confirm');
-    await _automator.waitElement(selector: '.reservation-completed');
-    var completionDialogs = await _automator.find(selector: '.reservation-completed');
-    if (completionDialogs == 0) {
-      throw TimeslotUnavailableException();
-    }
+  Future<void> ajaxReserve() async {
+    // String tokenHTML = await _automator.getHTML(selector: '#event_member_token_reserve_court');
+    // String eventMemberToken = RegExp(r'.*value="(\S+)".+').firstMatch(tokenHTML)?.group(1) ?? '';
 
-    await _automator.click(selector: '#button-ok');
-    return true;
+    await login();
+    await navigateBookingPage();
+
+
+        // (() => {
+        //   fetch('/').then(async (res) => {
+        //     ___.postMessage(1);
+        //     ___.postMessage('s');
+        //     ___.postMessage('1');
+        //     ___.postMessage([1,2,3]);
+        //     ___.postMessage(true);
+        //   })
+        // })();
+
+
   }
 
   Future<bool> run(DateTime date, int duration, int courtNumber) async {
@@ -219,31 +200,51 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
       await login();
       await navigateBookingPage();
 
-      while (true) {
-        try {
-          await findCourt(date: date, duration: duration, courtNum: courtNumber);
-        } on TimeoutException {
-          debugPrint('Failed. Could not find availability');
-          return false;
-        }
+      
+      DateTime now = DateTime.now();
+      DateTime releaseTime = DateTime.now().copyWith(hour: 12, minute: 30, second: 0, millisecond: 0, microsecond: 0);
+      if (releaseTime.subtract(Duration(minutes: 5)).isBefore(now) && releaseTime.isAfter(now)) {
+        await Future.delayed(releaseTime.subtract(Duration(seconds: 2)).difference(now));
+      }
 
+      for (int i = 0; i < 3; i++) {
         try {
-          await reserve(date);
+          var swatch = Stopwatch()..start();
+          while (swatch.elapsed < Duration(seconds: 5)) {
+            if(await findCourt(date: date, duration: duration, courtNum: courtNumber, refreshDelayMSec: 100)){
+              // break findCourt retry
+              break;
+            }
+            await Future.delayed(Duration(milliseconds: 10));
+          }
+            await reserve(date);
+            //break reserve retry
+            break;
         } on TimeslotUnavailableException {
+          // If the first try fails, try to get any court
+          if (courtNumber > 0) {
+            courtNumber = -1;
+          }
           continue;
-        }
-        break;
+        } 
       }
       return true;
     } on NoElementFoundException {
       debugPrint('Failed. Website may have changed');
-      await _automator.open(url: 'https://gtc.clubautomation.com');
+      return false;
+    } on TimeoutException {
+      // Failed to find elements in time. Likely due to server not updating UI as expected
+      debugPrint('Failed Server timed out');
       return false;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final settingsState = context.watch<SettingsState>();
+    username = settingsState.data.username;
+    password = settingsState.data.password;
+
     const double buttonWidth = 150;
     const double menuHeight = 615;
     final ButtonStyle secondaryButtonStyle = TextButton.styleFrom(
@@ -254,13 +255,13 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Tennis bot'),
+        title: const Text('Goldman Tennis Bot'),
         // This drop down menu demonstrates that Flutter widgets can be shown over the web view.
       ),
       // body: Container(),
       body: Column(
         children: [
-          Expanded(child: WebViewWidget(controller: _controller)),
+          Expanded(child: WebViewWidget(controller: _automator.webViewController)),
           DatePicker(
             date: date, 
             buttonStyle: secondaryButtonStyle,
@@ -285,7 +286,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
                 },
               ),
               CourtButtonSelector(
-                text: 'Court $courtNumber',
+                text: courtNumber == '-1' ? 'Any Courts' : 'Court $courtNumber',
                 buttonStyle: secondaryButtonStyle, 
                 menuWidth: buttonWidth,
                 menuHeight: menuHeight,

@@ -75,31 +75,6 @@ class _SettingsPageState extends State<SettingsPage> {
                         settingsState.data.username = usernameController.text;
                         settingsState.data.password = passwordController.text;
                         await settingsState.save();
-
-                        // print('launching web');
-                        // final browser = await WebAutomationFramework.launch();
-                        // print('launching new page');
-                        // final page = await browser.newPage();
-                        // print('going to gtc');
-                        // await page.goto(url: 'https://www.slickdeals.com/');
-                        // var html = await page.content();
-                        // debugPrint(html);
-
-                        // print('typing search');
-                        // await page.type(selector: '#search', text: 'hello');
-                        // print('searching');
-                        // await page.click(selector: '.slickdealsHeaderSearch__submitButton');
-
-                        // await page.type(selector: '#login', text: usernameController.text);
-                        // print('typing password');
-                        // await page.type(selector: '#password', text: passwordController.text);
-                        // print('click login');
-                        // await page.click(selector: '#loginButton');
-                        // print('waiting for navigation');
-                        // await page.waitForNavigation();
-                        // await page.goto(url: 'https://gtc.clubautomation.com/member');
-                        // html = await page.content();
-                        // debugPrint(html);
                       },
                       child: Text('Save'),
                     ),
