@@ -16,6 +16,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final settingsState = context.watch<SettingsState>();
     usernameController.text = settingsState.data.username;
     passwordController.text = settingsState.data.password;
+    var amollaMode = settingsState.data.amollaMode;
 
     final theme = Theme.of(context);
     final headerStyle = theme.textTheme.displaySmall!.copyWith(
@@ -36,54 +37,88 @@ class _SettingsPageState extends State<SettingsPage> {
             SizedBox(height: 10),
             Text('GTC Account', style: sectionStyle), 
             SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 10,
-                bottom: 10,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(6),
-                color: Colors.white,
-              ),
-              child: Column (
-                children: [
-                  TextField(
-                    controller: usernameController,
-                    obscureText: false,
-                    decoration: InputDecoration(
-                      border: UnderlineInputBorder(),
-                      labelText: 'Username',
-                    ),
-                    style: itemStyle,
+            Section(
+              children: [
+                TextField(
+                  controller: usernameController,
+                  obscureText: false,
+                  decoration: InputDecoration(
+                    border: UnderlineInputBorder(),
+                    labelText: 'Username',
                   ),
-                  SizedBox(height: 10),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      border: UnderlineInputBorder(),
-                      labelText: 'Password',
-                    ),
-                    style: itemStyle,
+                  style: itemStyle,
+                ),
+                SizedBox(height: 10),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    border: UnderlineInputBorder(),
+                    labelText: 'Password',
                   ),
-                  SizedBox(height: 10),
-                  Row(children: [
-                    ElevatedButton(
-                      onPressed: () async {
-                        settingsState.data.username = usernameController.text;
-                        settingsState.data.password = passwordController.text;
-                        await settingsState.save();
-                      },
-                      child: Text('Save'),
-                    ),
-                  ],)
-                ],
-              ),
+                  style: itemStyle,
+                ),
+                SizedBox(height: 10),
+                Row(children: [
+                  ElevatedButton(
+                    onPressed: () async {
+                      settingsState.data.username = usernameController.text;
+                      settingsState.data.password = passwordController.text;
+                      await settingsState.save();
+                    },
+                    child: Text('Save'),
+                  ),
+                ],)
+              ],
             ),
+            Section(children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Amolla Mode'),
+                    Switch(
+                      // This bool value toggles the switch.
+                      value: amollaMode,
+                      activeColor: Colors.red,
+                      onChanged: (bool value) async {
+                        settingsState.data.amollaMode = value;
+                        await settingsState.save();
+                        // This is called when the user toggles the switch.
+                      },
+                    ),
+                ],)
+              ],)
           ],
         ),
+    );
+  }
+}
+
+class Section extends StatelessWidget {
+  const Section({
+    super.key,
+    required this.children,
+  });
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 10,
+        bottom: 10,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        color: Colors.white,
+      ),
+      child: Column (
+        children: children,
+      ),
     );
   }
 }

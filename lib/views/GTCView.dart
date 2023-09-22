@@ -202,6 +202,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
       await navigateBookingPage();
 
       if (scheduledRun != null) {
+        debugPrint('waiting for the run $scheduledRun');
         await waitUntil(scheduledRun);
       }
 
@@ -304,36 +305,53 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
           ),
              Stack(
               children: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              fixedSize: Size.fromWidth(150),
-            ),
-            onPressed: 
-              running ? null : 
-            () async {
-              setState(() {
-                running = true;
-              });
-              await run(date, int.parse(duration), int.parse(courtNumber), null);
-              setState(() {
-                running = false;
-              });
-            },
-            child: const Text('Reserve'),
-          ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    fixedSize: Size.fromWidth(170),
+                  ),
+                  onPressed: running ? null : () async {
+                    setState(() {
+                      running = true;
+                    });
+                    await run(date, int.parse(duration), int.parse(courtNumber), null);
+                    setState(() {
+                      running = false;
+                    });
+                  },
+                  child: const Text('Reserve'),
+                ),
+                if (true) Positioned(
+                  right: 0,
+                  child: 
+                    IconButton.filledTonal(
+                      icon: Icon(Icons.timer),
+                      onPressed:  () async {
+
+
+                        setState(() {
+                          running = true;
+                        });
+                        var scheduleTime = DateTime.now().copyWith(hour: 12, minute: 29, second: 58, millisecond: 0, microsecond: 0);
+                        await run(date, int.parse(duration), int.parse(courtNumber), scheduleTime);
+                        setState(() {
+                          running = false;
+                        });
+                      },
+                    ),
+                ),
                 Positioned(
                   right: 12,
-                  top: 14,
+                  top: 12,
                   child: 
                     SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 24,
+                      height: 24,
                       child: 
                         running ? CircularProgressIndicator(
                           strokeWidth: 3,
                         ) : null,
-                  ),
-            ),
+                    ),
+                ),
           ]),
         ],
       )

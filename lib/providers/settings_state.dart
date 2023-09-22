@@ -7,18 +7,21 @@ class SettingsData {
   var username = '';
   var password = '';
   var verified = false;
+  var amollaMode = false;
 
   SettingsData();
 
   SettingsData.fromJson(Map<String, dynamic> json)
     : username = json['username'] ?? '',
       password = json['password'] ?? '',
-      verified= json['verified'] ?? false;
+      verified= json['verified'] ?? false,
+      amollaMode = json['amollaMode'] ?? false;
 
   Map<String,dynamic> toJSON() => {
     'username': username,
     'password': password,
     'verified': verified,
+    'amollaMode': amollaMode,
   };
 }
 
