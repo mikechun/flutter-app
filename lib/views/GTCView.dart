@@ -152,6 +152,10 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
       targetSelector: '.confirm-reservation-dialog',
     );
 
+    if (true) {
+      return false;
+    }
+
     try {
       await _automator.click(selector: '#confirm');
     } on NoElementFoundException {
@@ -210,6 +214,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
         var swatch = Stopwatch()..start();
         while (swatch.elapsed < Duration(seconds: 1)) {
           try {
+            debugPrint('Funding court. ${DateTime.now()}');
             List<String> courts = await findCourt(date: date, duration: duration, courtNum: courtNumber, refreshDelayMSec: 10);
             final targetTime = formatCourtTime(date);
 
@@ -326,12 +331,11 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
                     IconButton.filledTonal(
                       icon: Icon(Icons.timer),
                       onPressed:  () async {
-
-
                         setState(() {
                           running = true;
                         });
-                        var scheduleTime = DateTime.now().copyWith(hour: 12, minute: 29, second: 58, millisecond: 0, microsecond: 0);
+                        // var scheduleTime = DateTime.now().copyWith(hour: 12, minute: 29, second: 59, millisecond: 0, microsecond: 0);
+                        var scheduleTime = DateTime.now().add(Duration(seconds: 10));
                         await run(date, int.parse(duration), int.parse(courtNumber), scheduleTime);
                         setState(() {
                           running = false;

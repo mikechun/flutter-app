@@ -43,18 +43,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    Widget page;
-    switch (selectedIndex) {
-      case 0:
-        page = BrowserPage();
-        break;
-      case 1:
-        page = SettingsPage();
-        break;
-      default:
-        throw UnimplementedError('no widget for $selectedIndex');
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         return Scaffold(
@@ -84,8 +72,14 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: SafeArea(
                 child: Container(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  child: page,
+                  // color: Theme.of(context).colorScheme.primaryContainer,
+                  child: IndexedStack(
+                    index: selectedIndex,
+                    children: [
+                      BrowserPage(),
+                      SettingsPage(),
+                    ],
+                  ),
                 ),
                 )
               ),
