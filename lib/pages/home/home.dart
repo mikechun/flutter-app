@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:tennibot/views/GTCView.dart';
+import 'package:tennibot/views/gtc_view.dart';
 
 class BrowserPage extends StatefulWidget {
   @override

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:tennibot/views/ButtonSelector.dart';
+import 'package:tennibot/views/button_selector.dart';
 
 class CourtButtonSelector extends StatelessWidget{
   final ButtonStyle buttonStyle;

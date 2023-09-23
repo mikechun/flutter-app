@@ -4,11 +4,11 @@ import 'dart:math';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:tennibot/controllers/automator.dart';
+import 'package:tennibot/controllers/WebViewAutomator.dart';
 import 'package:tennibot/providers/settings_state.dart';
-import 'package:tennibot/views/CourtButtonSelector.dart';
-import 'package:tennibot/views/DatePicker.dart';
-import 'package:tennibot/views/DurationButtonSelector.dart';
+import 'package:tennibot/views/court_button_selector.dart';
+import 'package:tennibot/views/date_picker.dart';
+import 'package:tennibot/views/duration_button_selector.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 Map<String, String> parseCourtValues(String html) {
