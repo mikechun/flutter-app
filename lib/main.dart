@@ -25,7 +25,6 @@ class App extends StatelessWidget {
         title: 'Tennis Reservation App',
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
         ),
         home: HomePage(),
       ),
@@ -72,7 +71,6 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: SafeArea(
                 child: Container(
-                  // color: Theme.of(context).colorScheme.primaryContainer,
                   child: IndexedStack(
                     index: selectedIndex,
                     children: [

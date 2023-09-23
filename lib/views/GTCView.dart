@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tennibot/controllers/automator.dart';
@@ -29,7 +31,6 @@ Map<String, String> parseCourtValues(String html) {
   return d;
 }
 
-
 class TimeslotUnavailableException implements Exception {}
 class CourtNotAvailableException implements Exception {}
 class AuthenticationException implements Exception {}
@@ -51,6 +52,14 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
   bool running = false;
   late String username;
   late String password;
+  DateTime? scheduleTime;
+
+  bool testing = false;
+
+  Future<void> waitUntil(DateTime scheduledRun) async {
+    DateTime now = DateTime.now();
+    await Future.delayed(scheduledRun.difference(now));
+  }
 
   @override
   void initState() {
@@ -96,7 +105,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     await _automator.waitPageload();
   }
 
-  Future<List<String>> findCourt({required DateTime date, required int duration, int courtNum = -1, int timeoutSec = 5, int refreshDelayMSec = 100}) async {
+  Future<List<String>> findCourt({required DateTime date, required int duration, int courtNum = -1, int timeoutSec = 5}) async {
     String courtId = '-1';
     var formattedDate = '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
 
@@ -129,7 +138,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     debugPrint('courts results received');
 
     String? availabilityHTML = await _automator.getHTMLorNULL(selector: '#times-to-reserve > tbody > tr');
-    if (availabilityHTML == null) {
+    if (availabilityHTML == null || availabilityHTML != 'aaa') {
       throw CourtNotAvailableException();
     }
 
@@ -152,7 +161,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
       targetSelector: '.confirm-reservation-dialog',
     );
 
-    if (true) {
+    if (testing) {
       return false;
     }
 
@@ -212,10 +221,13 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
 
       try {
         var swatch = Stopwatch()..start();
+        // Try to find a court in 2 seconds.  At most 40 requests.
+        // Assuming that this EPOCH time does not driff more than 1 seconds.
+        int sleepDelayMs = 10;
         while (swatch.elapsed < Duration(seconds: 1)) {
           try {
-            debugPrint('Funding court. ${DateTime.now()}');
-            List<String> courts = await findCourt(date: date, duration: duration, courtNum: courtNumber, refreshDelayMSec: 10);
+            debugPrint('Finding court. ${DateTime.now()}');
+            List<String> courts = await findCourt(date: date, duration: duration, courtNum: courtNumber);
             final targetTime = formatCourtTime(date);
 
             if (!courts.contains(targetTime)) {
@@ -226,7 +238,11 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
             return true;
           } on CourtNotAvailableException {
             // try again. this is likely because the website has not refreshed yet.
-            await Future.delayed(Duration(milliseconds: 1000));
+            debugPrint('Court Not available: trying again');
+
+            // Exponential delay up to 200ms;
+            await Future.delayed(Duration(milliseconds: sleepDelayMs));
+            sleepDelayMs = min(sleepDelayMs * 2, 200);
             continue;
           } on TimeslotUnavailableException {
             // If failed to get the court that we wanted, try to get any court
@@ -246,7 +262,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
         debugPrintStack(stackTrace: s);
         return false;
       }
-      return true;
+      return false;
   }
 
   @override
@@ -262,15 +278,13 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
       alignment: Alignment.centerLeft,
     );
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text('Goldman Tennis Bot'),
-        // This drop down menu demonstrates that Flutter widgets can be shown over the web view.
-      ),
-      // body: Container(),
-      body: Column(
+    return 
+      Column(
         children: [
+          AppBar(
+            title: const Text('Goldman Tennis Bot'),
+            // This drop down menu demonstrates that Flutter widgets can be shown over the web view.
+          ),
           Expanded(child: WebViewWidget(controller: _automator.webViewController)),
           DatePicker(
             date: date, 
@@ -308,62 +322,75 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
               ),
             ],
           ),
-             Stack(
-              children: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    fixedSize: Size.fromWidth(170),
-                  ),
-                  onPressed: running ? null : () async {
-                    setState(() {
-                      running = true;
-                    });
-                    await run(date, int.parse(duration), int.parse(courtNumber), null);
-                    setState(() {
-                      running = false;
-                    });
-                  },
-                  child: const Text('Reserve'),
+        Stack(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            ElevatedButton(
+              onPressed: () async {
+                bool result = await run(
+                    date, int.parse(duration), int.parse(courtNumber), null);
+                String message =
+                    result ? 'Reservation successful' : 'Reservation failed';
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        content: Text(message)),
+                  );
+                }
+              },
+              child: const Text('Reserve'),
+            ),
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.all(0),
                 ),
-                if (true) Positioned(
-                  right: 0,
-                  child: 
-                    IconButton.filledTonal(
-                      icon: Icon(Icons.timer),
-                      onPressed:  () async {
-                        setState(() {
-                          running = true;
-                        });
-                        // var scheduleTime = DateTime.now().copyWith(hour: 12, minute: 29, second: 59, millisecond: 0, microsecond: 0);
-                        var scheduleTime = DateTime.now().add(Duration(seconds: 10));
-                        await run(date, int.parse(duration), int.parse(courtNumber), scheduleTime);
-                        setState(() {
-                          running = false;
-                        });
-                      },
+                child: Icon(Icons.timer),
+                onPressed: () async {
+                  var now = DateTime.now();
+                  var schedule = DateTime.now().copyWith(
+                      hour: 12,
+                      minute: 29,
+                      second: 59,
+                      millisecond: 950,
+                      microsecond: 0);
+                  if (schedule.isBefore(now)) {
+                    schedule =
+                        schedule.copyWith(day: schedule.day + 1);
+                  }
+                  var durationUntilSchedule = schedule.difference(now);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      content: Text(
+                          'Scheduled to run in ${durationUntilSchedule.toString()}'),
                     ),
-                ),
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: 
-                    SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: 
-                        running ? CircularProgressIndicator(
-                          strokeWidth: 3,
-                        ) : null,
-                    ),
-                ),
+                  );
+
+                  setState(() {
+                    scheduleTime = schedule;
+                  });
+
+                  bool result = await run(date, int.parse(duration),
+                      int.parse(courtNumber), schedule);
+                  String message =
+                      result ? 'Reservation successful' : 'Reservation failed';
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          behavior: SnackBarBehavior.floating,
+                          content: Text(message)),
+                    );
+                  }
+                },
+              ),
+            ),
           ]),
-        ],
-      )
+        ]),
+        SizedBox(width:10, height:5),
+      ],
     );
   }
 }
-
-  Future<void> waitUntil(DateTime scheduledRun) async {
-    DateTime now = DateTime.now();
-    await Future.delayed(scheduledRun.difference(now));
-  }
