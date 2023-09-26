@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';        // Import for Android features.
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';    // Import for iOS features.
@@ -14,10 +15,22 @@ class WaitElementAbortedException implements Exception {}
 enum WebViewEvents { pageload, waitElement }
 
 class WebViewAutomator {
-  late final WebViewController webViewController; 
   final Map<WebViewEvents, Completer> promises = {};
+  late final WebViewController webViewController; 
+  late final NavigationDelegate _navigationDelegate;
+  final Completer aaCompleter = Completer();
 
-  WebViewAutomator() {
+  WebViewAutomator._create();
+
+  static Future<WebViewAutomator> create() async {
+    debugPrint('constructing WebViewAutomator');
+
+    var automator = WebViewAutomator._create();
+    await automator.init();
+    return automator;
+  }
+
+  Future<void> init() async {
     // #docregion platform_features
     late final PlatformWebViewControllerCreationParams params;
     if (WebViewPlatform.instance is WebKitWebViewPlatform) {
@@ -31,8 +44,7 @@ class WebViewAutomator {
 
     webViewController = WebViewController.fromPlatformCreationParams(params);
     // #enddocregion platform_features
-    webViewController..setNavigationDelegate(
-      NavigationDelegate(
+    _navigationDelegate = NavigationDelegate(
         onProgress: (int progress) {
           debugPrint('WebView is loading (progress : $progress%)');
         },
@@ -75,34 +87,35 @@ class WebViewAutomator {
         onUrlChange: (UrlChange change) {
           debugPrint('url change to ${change.url}');
         },
-      ),
-    )
-    ..addJavaScriptChannel(
+    );
+
+    await webViewController.setNavigationDelegate(_navigationDelegate);
+    await webViewController.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await webViewController.addJavaScriptChannel(
       '___',
       onMessageReceived: (JavaScriptMessage message) {
+        debugPrint(message.message);
         Completer<dynamic>? completer;
         if (message.message == '${WebViewEvents.waitElement}') {
-          completer = promises[WebViewEvents.waitElement];
+          // completer = promises[WebViewEvents.waitElement];
         }
         else if (message.message == '${WebViewEvents.pageload}') {
-          completer = promises[WebViewEvents.pageload];
+          // completer = promises[WebViewEvents.pageload];
         }
 
-        if (completer != null && !completer.isCompleted) {
-          completer.complete(null);
-        }
-        debugPrint(message.message);
+        // if (completer != null && !completer.isCompleted) {
+        //   completer.complete(null);
+        // }
       },
     );
 
     // #docregion platform_features
     if (webViewController.platform is AndroidWebViewController) {
-      AndroidWebViewController.enableDebugging(true);
-      (webViewController.platform as AndroidWebViewController)
+      await AndroidWebViewController.enableDebugging(true);
+      await (webViewController.platform as AndroidWebViewController)
           .setMediaPlaybackRequiresUserGesture(false);
     }
     // #enddocregion platform_features
-
   }
 
   String _runJsAnonFunction(List<String> scripts) {
@@ -257,14 +270,46 @@ class WebViewAutomator {
   Future<void> waitPageload() async {
     debugPrint('wait pageload');
 
-    var completer = promises[WebViewEvents.pageload];
-    if (completer != null && !completer.isCompleted) {
-      completer.completeError(WebpageLoadAbortedException());
-    }
+    // var completer = promises[WebViewEvents.pageload];
+    // if (completer != null && !completer.isCompleted) {
+    //   debugPrint('webpageloadaborted');
+    //   completer.completeError(WebpageLoadAbortedException());
+    // }
 
-    promises[WebViewEvents.pageload] = Completer();
-    await promises[WebViewEvents.pageload]!.future;
-    promises.remove(WebViewEvents.pageload);
-    debugPrint('wait pageload done');
+    var completer = Completer();
+    promises[WebViewEvents.pageload] = completer;
+    // Future.delayed(Duration(seconds: 5), () {
+    //   // completer.complete(true);
+    // });
+    await aaCompleter.future;
+    // promises.remove(WebViewEvents.pageload);
+
+    // var t = await webViewController.getTitle();
+    // debugPrint(t);
+    return;
+
+    // completer.future.then((result) {
+    //   debugPrint('wait pageload done');
+    //   return;
+    // }).timeout(Duration(seconds:3), onTimeout: () async {
+    //   debugPrint('wait pageload timeout');
+    //   var title = await webViewController.getTitle();
+    //   debugPrint(title);
+    // });
+
+    // var swatch = Stopwatch()..start();
+    // while (swatch.elapsed < Duration(seconds: 10)) {
+      // String readyState = await webViewController.runJavaScriptReturningResult('''
+      //   document.readyState;
+      // ''') as String;
+
+      // debugPrint(readyState);
+      // if (readyState == 'complete') {
+      //   debugPrint(swatch.toString());
+      //   return;
+      // }
+      // Future.delayed(Duration(milliseconds: 100));
+    // }
+    // debugPrint('done with loop');
   }
 }

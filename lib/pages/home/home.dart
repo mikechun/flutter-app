@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:tennibot/views/gtc_view.dart';
+
+import 'gtc_reservations.dart';
 
 class BrowserPage extends StatefulWidget {
   @override
