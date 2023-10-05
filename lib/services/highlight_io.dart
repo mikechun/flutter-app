@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
 class HighlightIO {
-  static void sendLog(String message, Map<String, String> index) {
+  static Future<void> sendLog(String message, Map<String, String> index) async {
     var log = jsonEncode({
       'resourceLogs': [
         {
@@ -43,7 +43,7 @@ class HighlightIO {
       ]
     });
 
-    http.post(
+    await http.post(
       Uri.parse('https://otel.highlight.io:4318/v1/logs'),
       headers: <String, String>{
         'Content-Type': 'application/json',
