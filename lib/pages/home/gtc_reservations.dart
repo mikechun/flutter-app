@@ -7,6 +7,7 @@ import 'package:tennibot/services/gtc_runner.dart';
 import 'package:tennibot/views/court_button_selector.dart';
 import 'package:tennibot/views/date_picker.dart';
 import 'package:tennibot/views/duration_button_selector.dart';
+import 'package:tennibot/views/toggle_button.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 Map<String, String> parseCourtValues(String html) {
@@ -154,7 +155,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
             title: const Text('Goldman Tennis Bot'),
             // This drop down menu demonstrates that Flutter widgets can be shown over the web view.
           ),
-          runner != null ? Expanded(child: WebViewWidget(controller: runner!.controller)) : Container(),
+          Expanded(child: runner == null ? Container() : WebViewWidget(controller: runner!.controller)),
           DatePicker(
             date: date, 
             buttonStyle: secondaryButtonStyle,
@@ -202,11 +203,11 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
             SizedBox(
               width: 40,
               height: 40,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.all(0),
-                  backgroundColor: scheduleTime == null ? null : Color.fromRGBO(211, 205, 219, 1),
-                ),
+              child: CustomToggleButton.elevatedButton(
+                style: {
+                  'padding': EdgeInsets.zero,
+                },
+                pressed: scheduleTime != null, 
                 child: Icon(Icons.timer),
                 onPressed: () async {
                   if (scheduleTime != null) {
@@ -229,7 +230,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
                   });
                   await reserve(date, duration, courtNumber, schedule, amolla);
                 },
-              ),
+              )
             ),
           ]),
         ]),
