@@ -49,7 +49,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
   String duration = '90';
   bool running = false;
   DateTime? scheduleTime;
-  bool testing = true;
+  bool testing = false;
   GTCRunner? runner;
   bool amolla = false;
 
@@ -65,6 +65,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
   Future<void> reserve(DateTime date, String interval, String courtNumber, DateTime? schedule, bool fast) async {
     debugPrint('reserving for $date, interval $interval, court $courtNumber, with schedule $schedule, using fast $fast');
     var now = DateTime.now();
+    String snackMessage = '';
 
     if (schedule != null && schedule.isAfter(now)) {
       var durationUntilSchedule = schedule.difference(now);
@@ -89,17 +90,19 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     bool result = false;
     try{
       result = await runner!.run(date, int.parse(duration), int.parse(courtNumber), schedule, fast);
+      snackMessage = result ? 'Reservation successful' : 'Reservation failed';
+    } on RunnerCancelledException {
+      snackMessage = '';
     } catch (e) {
+      snackMessage = 'Reservation failed';
       debugPrint(e.toString());
     }
 
-    if (context.mounted) {
-      String message =
-          result ? 'Reservation successful' : 'Reservation failed';
+    if (context.mounted && snackMessage.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             behavior: SnackBarBehavior.floating,
-            content: Text(message)),
+            content: Text(snackMessage)),
       );
     }
   }
@@ -119,7 +122,10 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
     var SettingsData(:username, :password, :amollaMode) = Provider.of<SettingsState>(context, listen: true).data;
     if ((runner?.username, runner?.password) != (username, password)) {
       debugPrint('username or password changed');
-      runner = await GTCRunner.create(username, password);
+
+      if (username.isNotEmpty && password.isNotEmpty) {
+        runner = await GTCRunner.create(username, password);
+      }
     }
     print('dep change');
     print(data.toJSON());
@@ -199,17 +205,28 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.all(0),
+                  backgroundColor: scheduleTime == null ? null : Color.fromRGBO(211, 205, 219, 1),
                 ),
                 child: Icon(Icons.timer),
                 onPressed: () async {
+                  if (scheduleTime != null) {
+                    setState(() {
+                      scheduleTime = null;
+                    });
+                    return;
+                  }
+
                   DateTime schedule = DateTime.now().copyWith(
-                    hour: 12,
+                    hour: 22,
+                    // hour: 12,
                     minute: 30,
                     second: 0,
                     millisecond: 0,
                     microsecond: 0,
                   );
-                  scheduleTime = schedule;
+                  setState(() {
+                    scheduleTime = schedule;
+                  });
                   await reserve(date, duration, courtNumber, schedule, amolla);
                 },
               ),

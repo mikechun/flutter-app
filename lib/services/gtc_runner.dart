@@ -8,6 +8,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 class TimeslotUnavailableException implements Exception {}
 class CourtNotAvailableException implements Exception {}
 class AuthenticationException implements Exception {}
+class EmptyCredentialException implements Exception {}
+class RunnerCancelledException implements Exception {}
 
 Map<String, String> parseCourtValues(String html) {
   List courtOptions = html
@@ -25,8 +27,15 @@ Map<String, String> parseCourtValues(String html) {
     }
     d[key] = val;
   }
-
   return d;
+}
+
+String formatCourtTime(DateTime date) {
+  final String ampm = date.hour < 12 ? 'am' : 'pm';
+  final String hour = date.hour < 13 ? '${date.hour}' : '${date.hour % 12}';
+  final String minute = date.minute.toString().padLeft(2, '0');
+  final String time = '$hour:$minute$ampm';
+  return time;
 }
 
 Future<void> waitUntil(DateTime scheduledRun) async {
@@ -40,11 +49,18 @@ class GTCRunner {
   String password;
   DateTime? sessionExpiration;
   late WebViewAutomator _automator;
+  (DateTime, int)? schedule;
 
-  GTCRunner._create(this.username, this.password);
+  GTCRunner._create(this.username, this.password) {
+    if(username.isEmpty || password.isEmpty) {
+      throw EmptyCredentialException();
+    }
+  }
 
+  // Init must be called before using this object
   Future<void> init() async {
     _automator = await WebViewAutomator.create();
+    sessionExpiration = null;
   }
 
   static Future<GTCRunner> create(username, password) async {
@@ -57,6 +73,7 @@ class GTCRunner {
     return _automator.webViewController;
   }
 
+  // Login will not re-login if there's more than 1 hour left on the session
   Future<void> login() async {
     if (username.isEmpty || password.isEmpty) {
       return;
@@ -65,10 +82,10 @@ class GTCRunner {
     DateTime now = DateTime.now();
     if (sessionExpiration != null) {
       if (sessionExpiration!.subtract(Duration(hours: 1)).isAfter(now)) {
-        // Skip if there more than 1 hour left on expiry
+        // no need to refresh session if there's more than 1 hour left on the token
         return;
       }
-      // Logout and login again
+      // Logout to login again
       await _automator.open(url: 'https://gtc.clubautomation.com/logout');
       await _automator.waitPageLoad();
     }
@@ -103,8 +120,8 @@ class GTCRunner {
     await _automator.waitPageLoad();
   }
 
-  Future<List<String>> findCourt({required DateTime date, required int duration, int courtNum = -1, int timeoutSec = 5}) async {
-    await configureSearchForm(date, duration, courtNum);
+  Future<List<String>> findCourtTimes({required DateTime date, required int duration, int courtNum = -1, int timeoutSec = 5}) async {
+    await _configureSearchForm(date, duration, courtNum);
 
     await _automator.click(selector: '#reserve-court-search');
     debugPrint('clicked courts search');
@@ -118,9 +135,10 @@ class GTCRunner {
     String? availabilityHTML = await _automator.getHTMLorNULL(selector: '#times-to-reserve > tbody > tr');
     if (availabilityHTML == null) {
       HighlightIO.sendLog(
-        '',
+        '[]',
         { 
           'ballmachine': 'false',
+          'duration': duration.toString(),
           'reservedate': date.toIso8601String(),
           'court': courtNum.toString(),
           'username': username,
@@ -141,7 +159,8 @@ class GTCRunner {
       courtTimes.toString(),
       { 
         'ballmachine': 'false',
-        'reservedate': date.toIso8601String(),
+        'reserveDate': date.toIso8601String(),
+        'duration': duration.toString(),
         'court': courtNum.toString(),
         'username': username,
       },
@@ -151,6 +170,7 @@ class GTCRunner {
 
   Future<bool> reserve(DateTime date) async {
     String time = formatCourtTime(date);
+    debugPrint('reserving');
 
     await _automator.click(selector: '#times-to-reserve > tbody > tr > td > a', innerText: time);
     await _automator.waitElement(
@@ -192,16 +212,9 @@ class GTCRunner {
     }
   }
 
-  String formatCourtTime(DateTime date) {
-    final String ampm = date.hour < 12 ? 'am' : 'pm';
-    final String hour = date.hour < 13 ? '${date.hour}' : '${date.hour % 12}';
-    final String minute = date.minute.toString().padLeft(2, '0');
-    final String time = '$hour:$minute$ampm';
-    return time;
-  }
-
   Future<bool> fastReserve(DateTime date, int duration, int courtNum) async {
-    configureSearchForm(date, duration, courtNum);
+    _configureSearchForm(date, duration, courtNum);
+    debugPrint('fast reserving');
 
     await _automator.webViewController.runJavaScript('newMemberReg.reserveCourtConfirm()');
 
@@ -222,60 +235,69 @@ class GTCRunner {
     }
   }
 
-  Future<bool> run(DateTime date, int duration, int courtNumber, DateTime scheduledRun, bool fast) async {
-      DateTime now = DateTime.now();
+  Future<bool> run(DateTime date, int duration, int courtNumber, DateTime runAt, bool fast) async {
+      DateTime runStartTime = DateTime.now();
+      schedule = (date, runStartTime.millisecondsSinceEpoch);
 
-      // Prevent session expiration by delaying login until 1 hour before the scheduled run. 
-      await Future.delayed(scheduledRun!.subtract(const Duration(hours: 1)).difference(now));
+      // Prevent session expiration by delaying login until 1 minutes before the scheduled run. 
+      await Future.delayed(runAt.subtract(const Duration(minutes: 1)).difference(runStartTime));
+      if (schedule?.$2 != runStartTime.millisecondsSinceEpoch) {
+        throw RunnerCancelledException();
+      }
 
       await login();
       await navigateBookingPage();
 
       // final targetTime = formatCourtTime(date);
-      if (scheduledRun.isAfter(DateTime.now())) {
-        debugPrint('waiting for the run $scheduledRun');
-        await waitUntil(scheduledRun);
+      if (runAt.isAfter(DateTime.now())) {
+        debugPrint('waiting for the run $runAt');
+        await waitUntil(runAt);
+      }
+      if (schedule?.$2 != runStartTime.millisecondsSinceEpoch) {
+        throw RunnerCancelledException();
       }
 
       int nextCourt = courtNumber;
       // Run find court and send logs;
-      List<String> courts = [];
+      List<String> availability = [];
 
       // Wait up to 1 seconds for the page to update with new court times
-      bool timedOut = false;
-      await Future.doWhile(() async {
-        if (timedOut) { return false; }
+      Timer refreshTimer = Timer(Duration(seconds: 1), (){});
+      while (availability.isEmpty) {
+        if (!refreshTimer.isActive) {
+          debugPrint('stopping');
+          throw TimeoutException('Could not find an available court');
+        }
 
         debugPrint('finding courts');
+        Stopwatch refreshTime = Stopwatch()..start();
         try {
-          courts = await findCourt(date: date, duration: duration, courtNum: -1);
+          availability = await findCourtTimes(date: date, duration: duration, courtNum: -1);
         } on CourtNotAvailableException {
           debugPrint('court not found.. trying again');
-          await Future.delayed(Duration(milliseconds: 0));
-          return true;
+          // Give at least 100ms between page refreshes
+          await Future.delayed(Duration(milliseconds: 100 - refreshTime.elapsedMilliseconds));
         }
-        return false;
-      }).timeout(Duration(seconds: 1), onTimeout: () async {
-        timedOut = true;
-        debugPrint('stopping');
-        throw TimeoutException('Could not find an available court');
-      });
+      }
         
       //Reserve the timeslot try up to 5 times 
       for (int i = 0; i < 5; i++) {
-        if (!courts.contains(formatCourtTime(date))) {
+        if (schedule?.$2 != runStartTime.millisecondsSinceEpoch) {
+          throw RunnerCancelledException();
+        }
+
+        if (!availability.contains(formatCourtTime(date))) {
           debugPrint('failed to find time slot');
           // Given time is not available.  Pick a different time and try again
           return false;
         }
 
         try {
-          bool status = false;
           if (fast) {
-            status = await fastReserve(date, duration, nextCourt);
+            await fastReserve(date, duration, nextCourt);
           } else {
-            courts = await findCourt(date: date, duration: duration, courtNum: nextCourt);
-            status = await reserve(date);
+            availability = await findCourtTimes(date: date, duration: duration, courtNum: nextCourt);
+            await reserve(date);
           }
           debugPrint('reserve successful');
           return true;
@@ -289,18 +311,8 @@ class GTCRunner {
 
       return false;
   }
-
-  Future<String> test () async {
-    var js = await _automator.webViewController.runJavaScriptReturningResult("""
-      (() => {
-        return document.getElementById('reserve-court-filter');
-      })();
-    """);
-    debugPrint(js.toString());
-    return js.toString();
-  }
   
-  Future<void> configureSearchForm (DateTime date, int duration, int courtNum) async {
+  Future<void> _configureSearchForm (DateTime date, int duration, int courtNum) async {
     var formattedDate = '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
     final selectHTML = await _automator.getHTML(selector: '#court');
     final courtValues = parseCourtValues(selectHTML);
