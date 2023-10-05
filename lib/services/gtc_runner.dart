@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:tennibot/services/highlight_io.dart';
@@ -36,9 +35,10 @@ Future<void> waitUntil(DateTime scheduledRun) async {
 }
 
 class GTCRunner {
-  bool testing = true;
+  bool testing = false;
   String username;
   String password;
+  DateTime? sessionExpiration;
   late WebViewAutomator _automator;
 
   GTCRunner._create(this.username, this.password);
@@ -57,14 +57,25 @@ class GTCRunner {
     return _automator.webViewController;
   }
 
-  login() async {
+  Future<void> login() async {
     if (username.isEmpty || password.isEmpty) {
       return;
     }
 
+    DateTime now = DateTime.now();
+    if (sessionExpiration != null) {
+      if (sessionExpiration!.subtract(Duration(hours: 1)).isAfter(now)) {
+        // Skip if there more than 1 hour left on expiry
+        return;
+      }
+      // Logout and login again
+      await _automator.open(url: 'https://gtc.clubautomation.com/logout');
+      await _automator.waitPageLoad();
+    }
+
     debugPrint('logging in');
     await _automator.open(url: 'https://gtc.clubautomation.com');
-    await _automator.waitPageload();
+    await _automator.waitPageLoad();
 
     String url = await _automator.getLocation();
     if (url == 'https://gtc.clubautomation.com/member') {
@@ -72,53 +83,32 @@ class GTCRunner {
       return;
     }
 
-    debugPrint('typing');
+    // Enter credentials
     await _automator.type(selector: '#login', value: username);
     await _automator.type(selector: '#password', value: password);
-    debugPrint('clicking');
+    await _automator.click(selector: '#loginButton');
+    await _automator.waitPageLoad();
 
-    // await _automator.click(selector: '#loginButton');
-    // await _automator.waitPageload();
+    url = await _automator.getLocation();
+    if (url != 'https://gtc.clubautomation.com/member') {
+      throw AuthenticationException();
+    }
 
-    // url = await _automator.getLocation();
-    // if (url != 'https://gtc.clubautomation.com/member') {
-    //   throw AuthenticationException();
-    // }
-
+    sessionExpiration = now.add(Duration(hours: 8));
     debugPrint('logging in success');
   }
 
-  navigateBookingPage() async {
-    await _automator.click(selector: '#menu_reserve_a_court');
-    await _automator.waitPageload();
+  Future<void> navigateBookingPage() async {
+    await _automator.open(url: 'https://gtc.clubautomation.com/event/reserve-court-new');
+    await _automator.waitPageLoad();
   }
 
   Future<List<String>> findCourt({required DateTime date, required int duration, int courtNum = -1, int timeoutSec = 5}) async {
-    String courtId = '-1';
-    var formattedDate = '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
-
-    // tennis location is '1'
-    await _automator.set(selector: '#location', value: '1');
-    // set date
-    await _automator.set(selector: '#date', value: formattedDate);
-    // set duration
-    await _automator.check(selector: '#interval-$duration');
-    //
-    await _automator.set(selector: '#timeFrom', value: '0');
-    await _automator.set(selector: '#timeTo', value: '24');
-
-    final selectHTML = await _automator.getHTML(selector: '#court');
-    final courtValues = parseCourtValues(selectHTML);
-
-    if (courtValues.containsKey(courtNum.toString())) {
-      courtId = courtValues[courtNum.toString()] as String;
-    } 
-
-    await _automator.set(selector: '#court', value: courtId);
-    debugPrint('configured courts search');
+    await configureSearchForm(date, duration, courtNum);
 
     await _automator.click(selector: '#reserve-court-search');
     debugPrint('clicked courts search');
+
     await _automator.waitElement(
       listenerSelector: '#reserve-court-new',
       targetSelector: '#times-to-reserve > tbody > tr > td > a, .court-not-available-text'
@@ -127,6 +117,15 @@ class GTCRunner {
 
     String? availabilityHTML = await _automator.getHTMLorNULL(selector: '#times-to-reserve > tbody > tr');
     if (availabilityHTML == null) {
+      HighlightIO.sendLog(
+        '',
+        { 
+          'ballmachine': 'false',
+          'reservedate': date.toIso8601String(),
+          'court': courtNum.toString(),
+          'username': username,
+        },
+      );
       throw CourtNotAvailableException();
     }
 
@@ -142,7 +141,7 @@ class GTCRunner {
       courtTimes.toString(),
       { 
         'ballmachine': 'false',
-        'reservedate': formattedDate,
+        'reservedate': date.toIso8601String(),
         'court': courtNum.toString(),
         'username': username,
       },
@@ -160,7 +159,7 @@ class GTCRunner {
     );
 
     if (testing) {
-      return false;
+      throw TimeoutException('reservation diabled in test mode');
     }
 
     try {
@@ -201,67 +200,129 @@ class GTCRunner {
     return time;
   }
 
-  Future<void> ajaxReserve() async {
-    // String tokenHTML = await _automator.getHTML(selector: '#event_member_token_reserve_court');
-    // String eventMemberToken = RegExp(r'.*value="(\S+)".+').firstMatch(tokenHTML)?.group(1) ?? '';
-    await login();
-    await navigateBookingPage();
+  Future<bool> fastReserve(DateTime date, int duration, int courtNum) async {
+    configureSearchForm(date, duration, courtNum);
+
+    await _automator.webViewController.runJavaScript('newMemberReg.reserveCourtConfirm()');
+
+    await _automator.waitElement(
+      listenerSelector: '#reserve-court-popup-new',
+      targetSelector: '#button-ok',
+    );
+
+    String buttonHTML = await _automator.getHTML(selector: '#button-ok');
+    if (buttonHTML.contains('Close</button>')) {
+      debugPrint('Failed to book');
+      await _automator.click(selector: '#button-ok');
+      throw TimeslotUnavailableException();
+    } else {
+      debugPrint('Success in booking');
+      await _automator.click(selector: '#button-ok');
+      return true;
+    }
   }
 
-  Future<bool> run(DateTime date, int duration, int courtNumber, DateTime? scheduledRun) async {
-      await login();
-      if (duration != 100) return false;
+  Future<bool> run(DateTime date, int duration, int courtNumber, DateTime scheduledRun, bool fast) async {
+      DateTime now = DateTime.now();
 
+      // Prevent session expiration by delaying login until 1 hour before the scheduled run. 
+      await Future.delayed(scheduledRun!.subtract(const Duration(hours: 1)).difference(now));
+
+      await login();
       await navigateBookingPage();
 
-      if (scheduledRun != null) {
+      // final targetTime = formatCourtTime(date);
+      if (scheduledRun.isAfter(DateTime.now())) {
         debugPrint('waiting for the run $scheduledRun');
         await waitUntil(scheduledRun);
       }
 
-      try {
-        var swatch = Stopwatch()..start();
-        // Try to find a court in 2 seconds.  At most 40 requests.
-        // Assuming that this EPOCH time does not driff more than 1 seconds.
-        int sleepDelayMs = 10;
-        while (swatch.elapsed < Duration(seconds: 1)) {
-          try {
-            debugPrint('Finding court. ${DateTime.now()}');
-            List<String> courts = await findCourt(date: date, duration: duration, courtNum: courtNumber);
-            final targetTime = formatCourtTime(date);
+      int nextCourt = courtNumber;
+      // Run find court and send logs;
+      List<String> courts = [];
 
-            if (!courts.contains(targetTime)) {
-              // Given time is not available.  Pick a different time and try again
-              return false;
-            }
-            await reserve(date);
-            return true;
-          } on CourtNotAvailableException {
-            // try again. this is likely because the website has not refreshed yet.
-            debugPrint('Court Not available: trying again');
+      // Wait up to 1 seconds for the page to update with new court times
+      bool timedOut = false;
+      await Future.doWhile(() async {
+        if (timedOut) { return false; }
 
-            // Exponential delay up to 200ms;
-            await Future.delayed(Duration(milliseconds: sleepDelayMs));
-            sleepDelayMs = min(sleepDelayMs * 2, 200);
-            continue;
-          } on TimeslotUnavailableException {
-            // If failed to get the court that we wanted, try to get any court
-            if (courtNumber > 0) {
-              courtNumber = -1;
-            }
-            continue;
-          } 
+        debugPrint('finding courts');
+        try {
+          courts = await findCourt(date: date, duration: duration, courtNum: -1);
+        } on CourtNotAvailableException {
+          debugPrint('court not found.. trying again');
+          await Future.delayed(Duration(milliseconds: 0));
+          return true;
         }
-      } on NoElementFoundException catch (e, s) {
-        debugPrint('Failed. Element not found during the run. Website may have changed');
-        debugPrintStack(stackTrace: s);
         return false;
-      } on TimeoutException catch (e, s) {
-        // Failed to find elements in time. Likely due to server not updating UI as expected
-        debugPrint('Failed. Website failed to update during the run. Website may have changed');
-        debugPrintStack(stackTrace: s);
-        return false;
+      }).timeout(Duration(seconds: 1), onTimeout: () async {
+        timedOut = true;
+        debugPrint('stopping');
+        throw TimeoutException('Could not find an available court');
+      });
+        
+      //Reserve the timeslot try up to 5 times 
+      for (int i = 0; i < 5; i++) {
+        if (!courts.contains(formatCourtTime(date))) {
+          debugPrint('failed to find time slot');
+          // Given time is not available.  Pick a different time and try again
+          return false;
+        }
+
+        try {
+          bool status = false;
+          if (fast) {
+            status = await fastReserve(date, duration, nextCourt);
+          } else {
+            courts = await findCourt(date: date, duration: duration, courtNum: nextCourt);
+            status = await reserve(date);
+          }
+          debugPrint('reserve successful');
+          return true;
+        } on TimeslotUnavailableException {
+          debugPrint('Failed to grab the timeslot.');
+          if (nextCourt != -1) {
+            nextCourt = -1;
+          }
+        }
       }
+
       return false;
+  }
+
+  Future<String> test () async {
+    var js = await _automator.webViewController.runJavaScriptReturningResult("""
+      (() => {
+        return document.getElementById('reserve-court-filter');
+      })();
+    """);
+    debugPrint(js.toString());
+    return js.toString();
+  }
+  
+  Future<void> configureSearchForm (DateTime date, int duration, int courtNum) async {
+    var formattedDate = '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
+    final selectHTML = await _automator.getHTML(selector: '#court');
+    final courtValues = parseCourtValues(selectHTML);
+    // -1 is for all courts
+    String courtId = '-1';
+    if (courtValues.containsKey(courtNum.toString())) {
+      courtId = courtValues[courtNum.toString()] as String;
+    } 
+
+    // // tennis location is '1'
+    await _automator.set(selector: '#location', value: '1');
+    await _automator.set(selector: '#court', value: courtId);
+    await _automator.check(selector: '#ball_machine-0');
+    await _automator.set(selector: '#date', value: formattedDate);
+    await _automator.check(selector: '#interval-$duration');
+    await _automator.set(selector: '#timeFrom', value: '0');
+    await _automator.set(selector: '#timeTo', value: '24');
+    await _automator.set(selector: '#time-reserve', value: (date.millisecondsSinceEpoch / 1000).floor().toString());
+    await _automator.set(selector: '#location-reserve', value: '1');
+    await _automator.set(selector: '#surface-reserve', value: '2');
+    await _automator.set(selector: '#join-waitlist-case', value: '1');
+
+    debugPrint('configured courts search');
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,10 +16,13 @@ class WaitElementAbortedException implements Exception {}
 enum WebViewEvents { pageload, waitElement }
 
 class WebViewAutomator {
-  final Map<WebViewEvents, Completer> promises = {};
   late final WebViewController webViewController; 
   late final NavigationDelegate _navigationDelegate;
-  final Completer aaCompleter = Completer();
+
+  static final Finalizer _finalizer = Finalizer((p0) { 
+    debugPrint('WebViewAutomator finalizer called');
+  });
+
 
   WebViewAutomator._create();
 
@@ -26,6 +30,8 @@ class WebViewAutomator {
     debugPrint('constructing WebViewAutomator');
 
     var automator = WebViewAutomator._create();
+
+    _finalizer.attach(automator, 'dead', detach: automator);
     await automator.init();
     return automator;
   }
@@ -58,18 +64,6 @@ class WebViewAutomator {
              PageFinished fires after DOMContentLoaded.  However, we may already
              be in 'load' state.
           */
-          await webViewController.runJavaScript('''
-            if (document.readyState === 'complete') {
-              ___.postMessage('${WebViewEvents.pageload}');
-            }
-            else {
-              document.onreadystatechange = () => {
-                if (document.readyState === 'complete') {
-                  ___.postMessage('${WebViewEvents.pageload}');
-                }
-              }
-            }
-          ''');
         },
         onWebResourceError: (WebResourceError error) {
           debugPrint('''
@@ -95,17 +89,6 @@ class WebViewAutomator {
       '___',
       onMessageReceived: (JavaScriptMessage message) {
         debugPrint(message.message);
-        Completer<dynamic>? completer;
-        if (message.message == '${WebViewEvents.waitElement}') {
-          // completer = promises[WebViewEvents.waitElement];
-        }
-        else if (message.message == '${WebViewEvents.pageload}') {
-          // completer = promises[WebViewEvents.pageload];
-        }
-
-        // if (completer != null && !completer.isCompleted) {
-        //   completer.complete(null);
-        // }
       },
     );
 
@@ -157,6 +140,7 @@ class WebViewAutomator {
         ])
       );
     } on PlatformException catch (e) {
+      debugPrint('$selector and innerText $innerText');
       throw NoElementFoundException();
     }
 
@@ -247,8 +231,10 @@ class WebViewAutomator {
   Future<void> waitElement({required String listenerSelector, required String targetSelector, String innerText = ''}) async {
     debugPrint('wait element');
 
-    var swatch = Stopwatch()..start();
-    while (swatch.elapsed < Duration(seconds: 10)) {
+    bool timedOut = false;
+    await Future.doWhile(() async {
+      if (timedOut) { return false; }
+      await Future.delayed(Duration(milliseconds: 1));
       try {
         await runJavaScriptOnElements(
           selector: targetSelector, 
@@ -256,60 +242,45 @@ class WebViewAutomator {
           js: "return true;",
         );
         debugPrint('found element');
-        return;
+        return false;
       } on NoElementFoundException {
-        await Future.delayed(Duration(milliseconds: 2));
         debugPrint('not found element trying again');
+        return true;
       }
-    }
-    debugPrint('Timed out founding the element');
-    throw NoElementFoundException();
+    }).timeout(Duration(seconds: 10), onTimeout: () {
+      timedOut = true;
+      throw TimeoutException('Timed out waiting for the page to load');
+    });
   }
 
 
-  Future<void> waitPageload() async {
+  Future<void> waitPageLoad() async {
+    // Although solution using Completer is cleaner,
+    // this solution is at least 30ms faster.
     debugPrint('wait pageload');
 
-    // var completer = promises[WebViewEvents.pageload];
-    // if (completer != null && !completer.isCompleted) {
-    //   debugPrint('webpageloadaborted');
-    //   completer.completeError(WebpageLoadAbortedException());
-    // }
+    bool timedOut = false;
+    return await Future.doWhile(() async {
+      if (timedOut) { return false; }
 
-    var completer = Completer();
-    promises[WebViewEvents.pageload] = completer;
-    // Future.delayed(Duration(seconds: 5), () {
-    //   // completer.complete(true);
-    // });
-    await aaCompleter.future;
-    // promises.remove(WebViewEvents.pageload);
+      // JS context is usually delayed.  it may be stuck in previous load state
+      Future.delayed(Duration(milliseconds: 1));
+      String readyState = await webViewController.runJavaScriptReturningResult('''
+        document.readyState;
+      ''') as String;
+      return readyState == 'complete';
+    }).then((_) async {
+      await Future.doWhile(() async {
+        Future.delayed(Duration(milliseconds: 1));
+        String readyState = await webViewController.runJavaScriptReturningResult('''
+          document.readyState;
+        ''') as String;
 
-    // var t = await webViewController.getTitle();
-    // debugPrint(t);
-    return;
-
-    // completer.future.then((result) {
-    //   debugPrint('wait pageload done');
-    //   return;
-    // }).timeout(Duration(seconds:3), onTimeout: () async {
-    //   debugPrint('wait pageload timeout');
-    //   var title = await webViewController.getTitle();
-    //   debugPrint(title);
-    // });
-
-    // var swatch = Stopwatch()..start();
-    // while (swatch.elapsed < Duration(seconds: 10)) {
-      // String readyState = await webViewController.runJavaScriptReturningResult('''
-      //   document.readyState;
-      // ''') as String;
-
-      // debugPrint(readyState);
-      // if (readyState == 'complete') {
-      //   debugPrint(swatch.toString());
-      //   return;
-      // }
-      // Future.delayed(Duration(milliseconds: 100));
-    // }
-    // debugPrint('done with loop');
+        return readyState != 'complete';
+      });
+    }).timeout(Duration(seconds: 10), onTimeout: () {
+      timedOut = true;
+      throw TimeoutException('Timed out waiting for the page to load');
+    });
   }
 }

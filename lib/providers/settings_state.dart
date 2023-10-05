@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsData {
-  var username = '';
-  var password = '';
-  var verified = false;
-  var amollaMode = false;
+  String username = '';
+  String password = '';
+  bool verified = false;
+  bool amollaMode = false;
 
   SettingsData();
 

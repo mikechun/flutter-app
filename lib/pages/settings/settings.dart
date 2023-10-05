@@ -16,7 +16,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final settingsState = context.watch<SettingsState>();
     usernameController.text = settingsState.data.username;
     passwordController.text = settingsState.data.password;
-    var amollaMode = settingsState.data.amollaMode;
+    bool amollaMode = settingsState.data.amollaMode;
 
     final theme = Theme.of(context);
     final headerStyle = theme.textTheme.displaySmall!.copyWith(
@@ -28,6 +28,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final itemStyle = theme.textTheme.displaySmall!.copyWith(
       fontSize: 16,
     );
+
+    print(settingsState.data.toJSON());
 
     return SafeArea(
         child: ListView(
