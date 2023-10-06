@@ -29,8 +29,6 @@ class _SettingsPageState extends State<SettingsPage> {
       fontSize: 16,
     );
 
-    print(settingsState.data.toJSON());
-
     return SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),

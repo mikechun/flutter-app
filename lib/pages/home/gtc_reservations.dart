@@ -7,8 +7,10 @@ import 'package:tennibot/services/gtc_runner.dart';
 import 'package:tennibot/views/court_button_selector.dart';
 import 'package:tennibot/views/date_picker.dart';
 import 'package:tennibot/views/duration_button_selector.dart';
-import 'package:tennibot/views/toggle_button.dart';
+import 'package:tennibot/views/custom_toggle_button.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+
 
 Map<String, String> parseCourtValues(String html) {
   List courtOptions = html
@@ -52,11 +54,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
   DateTime? scheduleTime;
   bool testing = false;
   GTCRunner? runner;
-  bool amolla = false;
-
-  Finalizer finalizer = Finalizer((p0) {
-    debugPrint('ABC Finalizer');
-  });
+  bool amollaMode = false;
 
   Future<void> waitUntil(DateTime scheduledRun) async {
     DateTime now = DateTime.now();
@@ -116,30 +114,25 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
 
   @override
   void didChangeDependencies() async {
-    // TODO: implement didChangeDependencies
     super.didChangeDependencies();
-    var data = Provider.of<SettingsState>(context, listen: false).data;
 
     var SettingsData(:username, :password, :amollaMode) = Provider.of<SettingsState>(context, listen: true).data;
     if ((runner?.username, runner?.password) != (username, password)) {
       debugPrint('username or password changed');
 
       if (username.isNotEmpty && password.isNotEmpty) {
+        // Cancel previous runner if exists
+        runner?.schedule = null;
         runner = await GTCRunner.create(username, password);
       }
     }
-    print('dep change');
-    print(data.toJSON());
-    print('$username, $password, $amollaMode');
-
-    amolla = amollaMode;
+    amollaMode = amollaMode;
   }
 
   @override
   Widget build(BuildContext context) {
-    // final settingsState = context.watch<SettingsState>();
+    WakelockPlus.enable();
     debugPrint('building');
-    print(amolla);
 
     const double buttonWidth = 150;
     const double menuHeight = 615;
@@ -196,7 +189,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             ElevatedButton(
               onPressed: () async {
-                await reserve(date, duration, courtNumber, null, amolla);
+                await reserve(date, duration, courtNumber, null, amollaMode);
               },
               child: const Text('Reserve'),
             ),
@@ -207,7 +200,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
                 style: {
                   'padding': EdgeInsets.zero,
                 },
-                pressed: scheduleTime != null, 
+                pressed: runner?.schedule != null, 
                 child: Icon(Icons.timer),
                 onPressed: () async {
                   if (scheduleTime != null) {
@@ -228,7 +221,7 @@ class _GTCViewComponentState extends State<GTCViewComponent> {
                   setState(() {
                     scheduleTime = schedule;
                   });
-                  await reserve(date, duration, courtNumber, schedule, amolla);
+                  await reserve(date, duration, courtNumber, schedule, amollaMode);
                 },
               )
             ),
